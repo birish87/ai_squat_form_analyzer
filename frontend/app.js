@@ -179,7 +179,14 @@ async function loadModel() {
   }
 }
 
-loadModel();
+// Load model async — failure here must not block upload tab functionality
+loadModel().catch(err => {
+  console.error("MediaPipe model load failed:", err);
+  if (modelStatus) {
+    modelStatus.textContent = "Live analysis unavailable: " + err.message;
+    modelStatus.className = "model-status error";
+  }
+});
 
 // ── Live loop ─────────────────────────────────────────────────────────────
 

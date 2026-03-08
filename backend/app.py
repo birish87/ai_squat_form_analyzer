@@ -53,14 +53,23 @@ app.add_middleware(
 _executor = ThreadPoolExecutor(max_workers=2)
 
 # Serve frontend static files.
-# Path is relative to backend/ working directory (../frontend).
+# - API routes (/analyze, /realtime) are registered first.
+# - StaticFiles is mounted LAST at "/" so it doesn't swallow API routes.
+# - index.html is served explicitly at "/" before the catch-all mount.
 _frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
-if os.path.isdir(_frontend_dir):
-    app.mount("/static", StaticFiles(directory=_frontend_dir), name="static")
 
+if os.path.isdir(_frontend_dir):
     @app.get("/")
     async def serve_index():
         return FileResponse(os.path.join(_frontend_dir, "index.html"))
+
+    @app.get("/app.js")
+    async def serve_js():
+        return FileResponse(os.path.join(_frontend_dir, "app.js"))
+
+    # Mount at "/assets" for any future static assets (images, fonts etc.)
+    # Main JS and HTML are served explicitly above to avoid route conflicts.
+    app.mount("/assets", StaticFiles(directory=_frontend_dir), name="assets")
 
 
 # ---------------------------------------------------------------------------

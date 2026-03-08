@@ -1,0 +1,311 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SquatAI — Form Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0a0a0a; --surface: #111111; --border: #222222;
+      --accent: #c8f135; --accent2: #ff5c35;
+      --text: #e8e8e8; --muted: #666;
+      --radius: 12px;
+      --mono: 'DM Mono', monospace; --sans: 'Syne', sans-serif;
+    }
+    html, body { height: 100%; background: var(--bg); color: var(--text); font-family: var(--sans); overflow-x: hidden; }
+
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 20px 40px; border-bottom: 1px solid var(--border);
+      position: sticky; top: 0; background: rgba(10,10,10,0.9);
+      backdrop-filter: blur(12px); z-index: 100;
+    }
+    .logo { font-size: 1.3rem; font-weight: 800; letter-spacing: -0.03em; }
+    .logo span { color: var(--accent); }
+    .badge { font-family: var(--mono); font-size: 0.7rem; background: var(--accent); color: #000; padding: 3px 10px; border-radius: 99px; font-weight: 500; }
+
+    .tabs { display: flex; gap: 4px; padding: 24px 40px 0; border-bottom: 1px solid var(--border); }
+    .tab-btn {
+      font-family: var(--sans); font-size: 0.85rem; font-weight: 600;
+      letter-spacing: 0.04em; text-transform: uppercase;
+      padding: 10px 24px; background: none;
+      border: 1px solid transparent; border-bottom: none;
+      color: var(--muted); cursor: pointer;
+      border-radius: var(--radius) var(--radius) 0 0;
+      transition: all 0.2s; position: relative; bottom: -1px;
+    }
+    .tab-btn:hover { color: var(--text); }
+    .tab-btn.active { color: var(--accent); border-color: var(--border); background: var(--surface); border-bottom-color: var(--surface); }
+
+    main { padding: 40px; max-width: 1200px; margin: 0 auto; }
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* ── Upload ── */
+    .upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; align-items: start; }
+    .drop-zone {
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      padding: 60px 40px; text-align: center; cursor: pointer;
+      transition: all 0.25s; background: var(--surface); position: relative;
+    }
+    .drop-zone:hover, .drop-zone.drag-over { border-color: var(--accent); background: rgba(200,241,53,0.04); }
+    .drop-zone input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .drop-icon { font-size: 3rem; margin-bottom: 16px; filter: grayscale(1) opacity(0.5); }
+    .drop-zone h3 { font-size: 1rem; font-weight: 700; margin-bottom: 6px; letter-spacing: -0.02em; }
+    .drop-zone p { font-family: var(--mono); font-size: 0.75rem; color: var(--muted); }
+    #file-name { font-family: var(--mono); font-size: 0.78rem; color: var(--accent); margin-top: 14px; min-height: 18px; }
+
+    .btn-analyze {
+      width: 100%; margin-top: 16px; padding: 14px;
+      background: var(--accent); color: #000; border: none;
+      border-radius: var(--radius); font-family: var(--sans);
+      font-size: 0.9rem; font-weight: 800; letter-spacing: 0.04em;
+      text-transform: uppercase; cursor: pointer; transition: all 0.2s;
+    }
+    .btn-analyze:hover { background: #d8ff4a; transform: translateY(-1px); }
+    .btn-analyze:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; transform: none; }
+
+    .results-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 32px; min-height: 400px;
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+    }
+    .results-card.has-results { justify-content: flex-start; align-items: stretch; }
+    .empty-state { text-align: center; color: var(--muted); }
+    .empty-state .big-icon { font-size: 3.5rem; margin-bottom: 16px; opacity: 0.3; }
+    .empty-state p { font-family: var(--mono); font-size: 0.8rem; }
+
+    .score-row { display: flex; align-items: center; gap: 24px; margin-bottom: 28px; }
+    .score-dial {
+      width: 90px; height: 90px; border-radius: 50%;
+      background: conic-gradient(var(--accent) calc(var(--pct) * 1%), var(--border) 0);
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; position: relative;
+    }
+    .score-dial::after { content: ''; position: absolute; inset: 8px; border-radius: 50%; background: var(--surface); }
+    .score-num { position: relative; z-index: 1; font-size: 1.6rem; font-weight: 800; color: var(--accent); line-height: 1; }
+    .score-label { font-size: 1rem; font-weight: 700; letter-spacing: -0.02em; }
+    .score-sub { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); margin-top: 4px; }
+
+    .metrics-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-bottom: 24px; }
+    .metric-pill { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; }
+    .metric-pill .label { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .metric-pill .value { font-size: 1.05rem; font-weight: 700; letter-spacing: -0.02em; }
+    .metric-pill.warn .value { color: var(--accent2); }
+    .metric-pill.ok .value { color: var(--accent); }
+
+    .feedback-title { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+    .feedback-list { list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .feedback-list li { display: flex; align-items: flex-start; gap: 10px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-size: 0.85rem; line-height: 1.5; }
+    .feedback-list li::before { content: '→'; color: var(--accent); font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+
+    .loader { display: none; flex-direction: column; align-items: center; gap: 16px; color: var(--muted); }
+    .loader.show { display: flex; }
+    .spinner { width: 36px; height: 36px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.7s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .loader p { font-family: var(--mono); font-size: 0.78rem; }
+
+    /* ── Live panel ── */
+    .live-grid { display: grid; grid-template-columns: 1fr 360px; gap: 24px; align-items: start; }
+
+    .video-container { background: #000; border-radius: var(--radius); overflow: hidden; aspect-ratio: 4/3; position: relative; }
+    #liveCanvas { width: 100%; height: 100%; object-fit: cover; display: block; }
+
+    .live-status {
+      position: absolute; top: 14px; left: 14px;
+      display: flex; align-items: center; gap: 7px;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 99px;
+      padding: 5px 12px; font-family: var(--mono); font-size: 0.72rem;
+    }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+    .dot.live { background: var(--accent2); animation: pulse 1.2s ease-in-out infinite; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    .fps-badge {
+      position: absolute; top: 14px; right: 14px;
+      background: rgba(0,0,0,0.7); backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.08); border-radius: 99px;
+      padding: 5px 12px; font-family: var(--mono); font-size: 0.72rem; color: var(--muted);
+    }
+
+    .live-cue {
+      position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+      background: rgba(0,0,0,0.8); backdrop-filter: blur(8px);
+      border: 1px solid rgba(200,241,53,0.3); border-radius: 99px;
+      padding: 7px 18px; font-size: 0.82rem; font-weight: 600;
+      white-space: nowrap; color: var(--accent); pointer-events: none;
+      opacity: 0; transition: opacity 0.3s;
+    }
+    .live-cue.show { opacity: 1; }
+
+    .live-sidebar { display: flex; flex-direction: column; gap: 16px; }
+    .live-sidebar h3 { font-size: 0.75rem; font-family: var(--mono); color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+
+    .angle-bars { display: flex; flex-direction: column; gap: 10px; }
+    .angle-row { display: flex; flex-direction: column; gap: 5px; }
+    .angle-row .row-label { display: flex; justify-content: space-between; font-size: 0.78rem; }
+    .angle-row .row-label span:first-child { color: var(--muted); font-family: var(--mono); }
+    .angle-row .row-label span:last-child { font-weight: 700; font-family: var(--mono); }
+    .angle-bar-track { height: 6px; background: var(--border); border-radius: 99px; overflow: hidden; }
+    .angle-bar-fill { height: 100%; border-radius: 99px; background: var(--accent); width: 0%; transition: width 0.1s ease, background 0.3s ease; }
+    .angle-bar-fill.good    { background: #00e676; }
+    .angle-bar-fill.caution { background: #ffcc00; }
+    .angle-bar-fill.bad     { background: #ff5c35; }
+
+    /* Angle value text colours */
+    .angle-val.good    { color: #00e676; }
+    .angle-val.caution { color: #ffcc00; }
+    .angle-val.bad     { color: #ff5c35; }
+
+    .fault-list { display: flex; flex-direction: column; gap: 6px; }
+    .fault-item { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); font-size: 0.8rem; background: var(--surface); }
+    .fault-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex-shrink: 0; }
+    .fault-item.detected .fault-dot { background: var(--accent2); }
+    .fault-item.detected { border-color: rgba(255,92,53,0.3); color: var(--accent2); }
+    .fault-item.clear { color: var(--muted); }
+
+    .model-status { font-family: var(--mono); font-size: 0.72rem; color: var(--muted); text-align: center; padding: 8px; }
+    .model-status.ready { color: var(--accent); }
+    .model-status.error { color: var(--accent2); }
+
+    .btn-start-live {
+      padding: 13px; background: var(--accent); color: #000; border: none;
+      border-radius: var(--radius); font-family: var(--sans); font-size: 0.88rem;
+      font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
+      cursor: pointer; transition: all 0.2s; width: 100%;
+    }
+    .btn-start-live:hover { background: #d8ff4a; }
+    .btn-start-live:disabled { background: var(--border); color: var(--muted); cursor: not-allowed; }
+    .btn-start-live.stop { background: var(--accent2); color: #fff; }
+    .btn-start-live.stop:hover { background: #ff7a5a; }
+
+    @media (max-width: 860px) {
+      .upload-grid, .live-grid { grid-template-columns: 1fr; }
+      main { padding: 24px 20px; }
+      .tabs { padding: 16px 20px 0; }
+      header { padding: 16px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Squat<span>AI</span></div>
+  <span class="badge">BETA</span>
+</header>
+
+<nav class="tabs">
+  <button class="tab-btn active" data-tab="upload">📹 Upload Video</button>
+  <button class="tab-btn" data-tab="live">📡 Live Analysis</button>
+</nav>
+
+<main>
+  <!-- ── Upload Panel ── -->
+  <section class="panel active" id="panel-upload">
+    <div class="upload-grid">
+      <div>
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="videoUpload" accept="video/*" />
+          <div class="drop-icon">🎬</div>
+          <h3>Drop your squat video here</h3>
+          <p>MP4, MOV, AVI — side or front view recommended</p>
+          <div id="file-name"></div>
+        </div>
+        <button class="btn-analyze" id="analyzeBtn" disabled onclick="uploadVideo()">Analyze Form</button>
+      </div>
+      <div class="results-card" id="resultsCard">
+        <div class="empty-state" id="emptyState">
+          <div class="big-icon">📊</div>
+          <p>Your analysis will appear here</p>
+        </div>
+        <div class="loader" id="loader">
+          <div class="spinner"></div>
+          <p>Analyzing your squat…</p>
+        </div>
+        <div id="resultsContent" style="display:none"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Live Panel ── -->
+  <section class="panel" id="panel-live">
+    <div class="live-grid">
+      <div class="video-container">
+        <canvas id="liveCanvas" width="640" height="480"></canvas>
+        <div class="live-status">
+          <div class="dot" id="liveDot"></div>
+          <span id="liveStatusText">Camera off</span>
+        </div>
+        <div class="fps-badge" id="fpsBadge">— fps</div>
+        <div class="live-cue show" id="liveCue">Start to begin</div>
+      </div>
+      <div class="live-sidebar">
+        <div>
+          <h3>Joint Angles</h3>
+          <div class="angle-bars">
+            <div class="angle-row">
+              <div class="row-label"><span>Left Knee</span><span id="lkaVal" class="angle-val">—°</span></div>
+              <div class="angle-bar-track"><div class="angle-bar-fill" id="lkaBar"></div></div>
+            </div>
+            <div class="angle-row">
+              <div class="row-label"><span>Right Knee</span><span id="rkaVal" class="angle-val">—°</span></div>
+              <div class="angle-bar-track"><div class="angle-bar-fill" id="rkaBar"></div></div>
+            </div>
+            <div class="angle-row">
+              <div class="row-label"><span>Hip</span><span id="hipVal" class="angle-val">—°</span></div>
+              <div class="angle-bar-track"><div class="angle-bar-fill" id="hipBar"></div></div>
+            </div>
+            <div class="angle-row">
+              <div class="row-label"><span>Back Lean</span><span id="backVal" class="angle-val">—°</span></div>
+              <div class="angle-bar-track"><div class="angle-bar-fill" id="backBar"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Colour key -->
+        <div>
+          <h3>Colour Key</h3>
+          <div style="display:flex;flex-direction:column;gap:6px;font-family:var(--mono);font-size:0.72rem;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:#00e676;flex-shrink:0"></div>
+              <span style="color:#00e676;font-weight:600">Good</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-left:18px;color:var(--muted)">Knee ≤ 100° · Hip ≤ 100° · Back ≤ 25°</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:#ffcc00;flex-shrink:0"></div>
+              <span style="color:#ffcc00;font-weight:600">Caution</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-left:18px;color:var(--muted)">Knee 100–120° · Hip 100–120° · Back 25–45°</div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:2px;">
+              <div style="width:10px;height:10px;border-radius:50%;background:#ff5c35;flex-shrink:0"></div>
+              <span style="color:#ff5c35;font-weight:600">Needs work</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-left:18px;color:var(--muted)">Knee > 120° · Hip > 120° · Back > 45°</div>
+          </div>
+          <div style="margin-top:12px;font-family:var(--mono);font-size:0.68rem;color:var(--muted);line-height:1.6;">
+            <div><span style="color:var(--text)">Knee/Hip</span> — lower = deeper squat. Target ≤ 90° at bottom.</div>
+            <div><span style="color:var(--text)">Back Lean</span> — degrees forward from upright. Keep low.</div>
+            <div><span style="color:var(--text)">Bar width</span> — how close to straight (180°) your joint is.</div>
+          </div>
+        </div>
+        <div>
+          <h3>Live Faults</h3>
+          <div class="fault-list">
+            <div class="fault-item clear" id="fault-valgus"><div class="fault-dot"></div>Knee Valgus</div>
+            <div class="fault-item clear" id="fault-lean"><div class="fault-dot"></div>Forward Lean</div>
+          </div>
+        </div>
+        <div class="model-status" id="modelStatus">Loading pose model…</div>
+        <button class="btn-start-live" id="liveBtn" onclick="toggleLive()" disabled>Loading model…</button>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="app.js"></script>
+</body>
+</html>

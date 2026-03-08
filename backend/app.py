@@ -31,6 +31,8 @@ import cv2
 import numpy as np
 from fastapi import FastAPI, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from mediapipe.tasks.python import vision
 
@@ -49,6 +51,16 @@ app.add_middleware(
 
 # Thread pool for CPU-bound MediaPipe inference — keeps async loop unblocked
 _executor = ThreadPoolExecutor(max_workers=2)
+
+# Serve frontend static files.
+# Path is relative to backend/ working directory (../frontend).
+_frontend_dir = os.path.join(os.path.dirname(__file__), "..", "frontend")
+if os.path.isdir(_frontend_dir):
+    app.mount("/static", StaticFiles(directory=_frontend_dir), name="static")
+
+    @app.get("/")
+    async def serve_index():
+        return FileResponse(os.path.join(_frontend_dir, "index.html"))
 
 
 # ---------------------------------------------------------------------------

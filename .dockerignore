@@ -1,0 +1,12 @@
+**/__pycache__
+**/*.pyc
+**/*.pyo
+**/.env
+**/venv
+**/venv311
+**/.vscode
+**/.idea
+**/*.DS_Store
+**/Thumbs.db
+backend/temp_*
+README.md

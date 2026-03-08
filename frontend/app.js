@@ -9,7 +9,12 @@
  * which eliminates the encode→send→infer→encode→receive round-trip entirely.
  */
 
-const API_BASE = "http://localhost:8000";
+// In production (Railway) the frontend is served by the same FastAPI process,
+// so we use a relative URL. Locally with python -m http.server we fall back
+// to localhost:8000.
+const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1"
+  ? "http://localhost:8000"
+  : "";   // same-origin in production
 
 // ── Tab nav ───────────────────────────────────────────────────────────────
 

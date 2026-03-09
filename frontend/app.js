@@ -98,12 +98,10 @@ function finishProgress(success = true) {
 function resetProgress() {
   const fill = document.getElementById("progressFill");
   const pct  = document.getElementById("progressPct");
-  if (fill) { fill.style.width = "0%"; fill.style.transition = "none"; }
+  const msg  = document.getElementById("loaderMsg");
+  if (fill) { fill.style.transition = "none"; fill.style.width = "0%"; }
   if (pct)  pct.textContent = "0%";
-  // Re-enable transition after reset
-  requestAnimationFrame(() => {
-    if (fill) fill.style.transition = "width 0.4s ease";
-  });
+  if (msg)  msg.textContent = "Uploading video…";
 }
 
 async function uploadVideo() {
@@ -114,6 +112,13 @@ async function uploadVideo() {
   resetProgress();
   loader.classList.add("show");
   analyzeBtn.disabled = true;
+
+  // Wait two frames so the browser paints the reset state and
+  // the transition:none has taken effect before we re-enable it
+  await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const fill = document.getElementById("progressFill");
+  if (fill) fill.style.transition = "width 0.4s ease";
+
   startProgress();
 
   const fd = new FormData();

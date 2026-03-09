@@ -54,21 +54,81 @@ dropZone.addEventListener("drop", e => {
   }
 });
 
+// Simulated progress — advances fast then slows near 90%, snaps to 100% on completion
+let _progressRaf = null;
+
+function startProgress() {
+  const fill = document.getElementById("progressFill");
+  const pct  = document.getElementById("progressPct");
+  const msg  = document.getElementById("loaderMsg");
+  if (!fill || !pct) return;
+
+  let current = 0;
+  const stages = [
+    { target: 15, speed: 0.8, label: "Uploading video…"       },
+    { target: 40, speed: 0.5, label: "Extracting pose…"        },
+    { target: 65, speed: 0.3, label: "Calculating angles…"     },
+    { target: 85, speed: 0.15, label: "Scoring your squat…"    },
+    { target: 92, speed: 0.05, label: "Generating feedback…"   },
+  ];
+  let stageIdx = 0;
+
+  function tick() {
+    const stage = stages[stageIdx] || stages[stages.length - 1];
+    if (msg) msg.textContent = stage.label;
+    current = Math.min(current + stage.speed, stage.target);
+    fill.style.width = `${current}%`;
+    pct.textContent  = `${Math.round(current)}%`;
+    if (current >= stage.target && stageIdx < stages.length - 1) stageIdx++;
+    if (current < 92) _progressRaf = requestAnimationFrame(tick);
+  }
+  _progressRaf = requestAnimationFrame(tick);
+}
+
+function finishProgress(success = true) {
+  if (_progressRaf) { cancelAnimationFrame(_progressRaf); _progressRaf = null; }
+  const fill = document.getElementById("progressFill");
+  const pct  = document.getElementById("progressPct");
+  const msg  = document.getElementById("loaderMsg");
+  if (fill) fill.style.width = "100%";
+  if (pct)  pct.textContent  = "100%";
+  if (msg)  msg.textContent  = success ? "Done!" : "Analysis failed.";
+}
+
+function resetProgress() {
+  const fill = document.getElementById("progressFill");
+  const pct  = document.getElementById("progressPct");
+  if (fill) { fill.style.width = "0%"; fill.style.transition = "none"; }
+  if (pct)  pct.textContent = "0%";
+  // Re-enable transition after reset
+  requestAnimationFrame(() => {
+    if (fill) fill.style.transition = "width 0.4s ease";
+  });
+}
+
 async function uploadVideo() {
   const file = videoInput.files[0];
   if (!file) return;
   emptyState.style.display = "none";
   resultsContent.style.display = "none";
+  resetProgress();
   loader.classList.add("show");
   analyzeBtn.disabled = true;
+  startProgress();
 
   const fd = new FormData();
   fd.append("file", file);
   try {
     const res = await fetch(`${API_BASE}/analyze`, { method: "POST", body: fd });
     if (!res.ok) throw new Error(`Server error ${res.status}: ${await res.text()}`);
-    renderResults(await res.json());
+    const data = await res.json();
+    finishProgress(true);
+    // Brief pause so user sees 100% before results replace loader
+    await new Promise(r => setTimeout(r, 400));
+    renderResults(data);
   } catch (err) {
+    finishProgress(false);
+    await new Promise(r => setTimeout(r, 300));
     renderError(err.message);
   } finally {
     loader.classList.remove("show");
@@ -150,32 +210,70 @@ const CONNECTIONS = [
   [24,26],[26,28],[28,30],[28,32],
 ];
 
+// ── Model loading bar helpers ─────────────────────────────────────────────
+
+function setModelProgress(pct, label, state = "loading") {
+  const fill   = document.getElementById("modelLoadFill");
+  const status = document.getElementById("modelStatus");
+  if (fill) {
+    fill.style.width = `${pct}%`;
+    fill.className = "model-load-fill" + (state === "done" ? " done" : state === "error" ? " error" : "");
+  }
+  if (status) {
+    status.textContent = label;
+    status.className = "model-status" +
+      (state === "done" ? " ready" : state === "error" ? " error" : "");
+  }
+}
+
+function hideModelBar() {
+  const wrap = document.getElementById("modelLoadWrap");
+  if (wrap) wrap.style.display = "none";
+}
+
 // Load MediaPipe Tasks Vision from CDN
 async function loadModel() {
   try {
+    setModelProgress(10, "Fetching runtime…");
+
     const { PoseLandmarker, FilesetResolver } =
       await import("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs");
+
+    setModelProgress(35, "Loading WASM…");
 
     const vision = await FilesetResolver.forVisionTasks(
       "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
     );
 
-    poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+    setModelProgress(65, "Downloading model…");
+
+    // Try GPU first, fall back to CPU for Safari iOS / Android
+    let landmarkerOptions = {
       baseOptions: {
         modelAssetPath: "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task",
         delegate: "GPU",
       },
       runningMode: "VIDEO",
       numPoses: 1,
-    });
+    };
+    try {
+      poseLandmarker = await PoseLandmarker.createFromOptions(vision, landmarkerOptions);
+    } catch (gpuErr) {
+      console.warn("GPU delegate failed, falling back to CPU:", gpuErr);
+      setModelProgress(80, "Switching to CPU…");
+      landmarkerOptions.baseOptions.delegate = "CPU";
+      poseLandmarker = await PoseLandmarker.createFromOptions(vision, landmarkerOptions);
+    }
 
-    modelStatus.textContent = "Model ready ✓";
-    modelStatus.className = "model-status ready";
+    setModelProgress(100, "Model ready ✓", "done");
     liveBtn.disabled = false;
     liveBtn.textContent = "Start Live Analysis";
+
+    // Hide bar after short pause — it served its purpose
+    setTimeout(hideModelBar, 1200);
+
   } catch (err) {
-    modelStatus.textContent = `Model failed: ${err.message}`;
-    modelStatus.className = "model-status error";
+    setModelProgress(100, `Failed: ${err.message}`, "error");
     console.error("MediaPipe load error:", err);
   }
 }
@@ -195,10 +293,22 @@ function toggleLive() { liveActive ? stopLive() : startLive(); }
 
 async function startLive() {
   if (!poseLandmarker) return;
+  // On mobile, facingMode: "user" (front cam) is better for self-monitoring
+  // Avoid exact constraints — some mobile browsers reject them
+  const isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  const videoConstraints = isMobile
+    ? { facingMode: "user" }
+    : { width: { ideal: 640 }, height: { ideal: 480 } };
+
   try {
-    stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480 } });
+    stream = await navigator.mediaDevices.getUserMedia({ video: videoConstraints });
   } catch (e) {
-    alert("Could not access webcam: " + e.message); return;
+    // If preferred camera fails, try any camera
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: true });
+    } catch (e2) {
+      alert("Could not access camera: " + e2.message + "\n\nMake sure you are using HTTPS and have granted camera permission."); return;
+    }
   }
 
   // Hidden video element for webcam frames

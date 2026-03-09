@@ -34,12 +34,19 @@ def hip_angle(shoulder, hip, knee):
 
 
 def back_angle(shoulder, hip):
+    """
+    Angle of the torso from vertical (degrees).
+    0 = perfectly upright. Increases as the person leans forward.
 
-    vertical = np.array([0, 1, 0])
+    MediaPipe y increases downward, so "up" = [0, -1, 0].
+    Using [0, 1, 0] gives the supplement (180 - true_angle),
+    which is why leaning ~45 deg was showing ~135 deg.
+    """
+    vertical = np.array([0, -1, 0])   # upward in MediaPipe coords
     torso = np.array(shoulder) - np.array(hip)
 
     cosine = np.dot(torso, vertical) / (
         np.linalg.norm(torso) * np.linalg.norm(vertical)
     )
 
-    return np.degrees(np.arccos(cosine))
+    return np.degrees(np.arccos(np.clip(cosine, -1.0, 1.0)))

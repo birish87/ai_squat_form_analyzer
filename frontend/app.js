@@ -88,6 +88,7 @@ function renderResults(data) {
     { label: "Squat Depth",    value: metrics.squat_depth  || "—",  warn: metrics.squat_depth === "above parallel" },
     { label: "Reps Detected",  value: metrics.rep_count    != null ? metrics.rep_count : "—", warn: false },
     { label: "Consistency",    value: metrics.movement_consistency != null ? metrics.movement_consistency.toFixed(1) : "—", warn: metrics.movement_consistency < 5 },
+    { label: "Knee Width Ratio", value: metrics.mean_knee_width_ratio != null ? metrics.mean_knee_width_ratio.toFixed(2) : "—", warn: metrics.mean_knee_width_ratio < 1.5 },
   ];
   resultsContent.innerHTML = `
     <div class="score-row">
@@ -341,11 +342,13 @@ function angleBetween(a, b, c) {
 }
 
 function backAngle(shoulder, hip) {
-  const torso   = [shoulder[0]-hip[0], shoulder[1]-hip[1], shoulder[2]-hip[2]];
-  const vertical = [0, 1, 0];
-  const dot  = torso[1];  // dot with [0,1,0] = just y component
-  const mag  = Math.sqrt(torso[0]**2 + torso[1]**2 + torso[2]**2);
+  // Torso vector: hip -> shoulder.
+  // MediaPipe y increases downward, so "up" = negative y.
+  // Compare against [0,-1,0] so standing upright = ~0deg, leaning forward increases angle.
+  const torso = [shoulder[0]-hip[0], shoulder[1]-hip[1], shoulder[2]-hip[2]];
+  const mag   = Math.sqrt(torso[0]**2 + torso[1]**2 + torso[2]**2);
   if (mag === 0) return null;
+  const dot = -torso[1]; // dot product with [0,-1,0]
   return (Math.acos(Math.max(-1, Math.min(1, dot / mag))) * 180) / Math.PI;
 }
 
@@ -376,37 +379,30 @@ function computeMetrics(lms) {
   const leftValgus  = lms[25].visibility > 0.4 ? valgusRatio(lh, lk, la) : 0;
   const rightValgus = lms[26].visibility > 0.4 ? -valgusRatio(rh, rk, ra) : 0; // right leg inverted
 
+  // Knee width ratio: how wide are knees relative to hips
+  // ~1.5 = ideal (knees wider than hips), <1.5 = too narrow
+  let kneeWidthRatio = null;
+  const hipWidth  = Math.abs(rh[0] - lh[0]);
+  const kneeWidth = Math.abs(rk[0] - lk[0]);
+  if (hipWidth > 1e-4) kneeWidthRatio = kneeWidth / hipWidth;
+
   return {
     leftKnee, rightKnee, leftHip, back,
-    faultValgus:  leftValgus > 0.15 || rightValgus > 0.15,
-    faultForward: back != null && back > 45,
+    kneeWidthRatio,
+    faultValgus:       leftValgus > 0.15 || rightValgus > 0.15,
+    faultForward:      back != null && back > 45,
+    faultNarrowKnees:  kneeWidthRatio != null && kneeWidthRatio < 1.5,
   };
 }
 
 // ── Sidebar UI ────────────────────────────────────────────────────────────
 
-function updateUI(m) {
-  setAngleBar("lkaVal", "lkaBar", m.leftKnee,  180, "knee");
-  setAngleBar("rkaVal", "rkaBar", m.rightKnee, 180, "knee");
-  setAngleBar("hipVal", "hipBar", m.leftHip,   180, "hip");
-  setAngleBar("backVal","backBar", m.back,       90, "back");
-
-  setFault("fault-valgus", m.faultValgus);
-  setFault("fault-lean",   m.faultForward);
-
-  // Coaching cue
-  if (m.faultValgus)       liveCue.textContent = "Push your knees out!";
-  else if (m.faultForward) liveCue.textContent = "Keep your chest up!";
-  else if (m.leftKnee != null && m.leftKnee > 100 &&
-           m.rightKnee != null && m.rightKnee > 100) liveCue.textContent = "Squat deeper — aim for parallel.";
-  else                     liveCue.textContent = "Good form — keep it up!";
-}
-
-// Thresholds per metric — [good_max, caution_max]
+// Thresholds and helpers defined first — const is not hoisted so must
+// appear before the functions that call them.
 const ANGLE_THRESHOLDS = {
-  knee: [100, 120],   // good ≤100, caution ≤120, bad >120
+  knee: [100, 120],
   hip:  [100, 120],
-  back: [25,  45],    // good ≤25,  caution ≤45,  bad >45
+  back: [25,  45],
 };
 
 function angleClass(angle, type) {
@@ -423,9 +419,39 @@ function setAngleBar(valId, barId, angle, max = 180, type = "knee") {
     el.textContent = `${Math.round(angle)}°`;
     bar.style.width = `${Math.min(100, (angle / max) * 100)}%`;
     const cls = angleClass(angle, type);
-    // Apply colour class to bar
     bar.className = `angle-bar-fill ${cls}`;
-    // Apply colour class to value text
+    el.className  = `angle-val ${cls}`;
+  }
+}
+
+function updateUI(m) {
+  setAngleBar("lkaVal", "lkaBar", m.leftKnee,  180, "knee");
+  setAngleBar("rkaVal", "rkaBar", m.rightKnee, 180, "knee");
+  setAngleBar("hipVal", "hipBar", m.leftHip,   180, "hip");
+  setAngleBar("backVal","backBar", m.back,       90, "back");
+  setKneeWidth(m.kneeWidthRatio);
+
+  setFault("fault-valgus",  m.faultValgus);
+  setFault("fault-lean",    m.faultForward);
+  setFault("fault-narrow",  m.faultNarrowKnees);
+
+  if (m.faultNarrowKnees)  liveCue.textContent = "Spread your knees wider!";
+  else if (m.faultValgus)  liveCue.textContent = "Push your knees out!";
+  else if (m.faultForward) liveCue.textContent = "Keep your chest up!";
+  else if (m.leftKnee != null && m.leftKnee > 100 &&
+           m.rightKnee != null && m.rightKnee > 100) liveCue.textContent = "Squat deeper — aim for parallel.";
+  else                     liveCue.textContent = "Good form — keep it up!";
+}
+
+function setKneeWidth(ratio) {
+  const el  = document.getElementById("kwVal");
+  const bar = document.getElementById("kwBar");
+  if (ratio != null && el && bar) {
+    el.textContent = ratio.toFixed(2);
+    // Bar fills to 100% at ratio=1.5, colour based on range
+    bar.style.width = `${Math.min(100, (ratio / 1.5) * 100)}%`;
+    const cls = ratio >= 1.5 ? "good" : ratio >= 1.0 ? "caution" : "bad";
+    bar.className = `angle-bar-fill ${cls}`;
     el.className  = `angle-val ${cls}`;
   }
 }
@@ -447,6 +473,10 @@ function resetAngleBars() {
     el.style.width = "0%";
     el.className = "angle-bar-fill";
   });
+  const kwValEl = document.getElementById("kwVal");
+  const kwBarEl = document.getElementById("kwBar");
+  if (kwValEl) { kwValEl.textContent = "—"; kwValEl.className = "angle-val"; }
+  if (kwBarEl) { kwBarEl.style.width = "0%"; kwBarEl.className = "angle-bar-fill"; }
   setFault("fault-valgus", false);
   setFault("fault-lean",   false);
 }

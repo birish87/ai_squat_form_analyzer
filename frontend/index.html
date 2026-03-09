@@ -263,6 +263,10 @@
               <div class="row-label"><span>Back Lean</span><span id="backVal" class="angle-val">—°</span></div>
               <div class="angle-bar-track"><div class="angle-bar-fill" id="backBar"></div></div>
             </div>
+            <div class="angle-row">
+              <div class="row-label"><span>Knee Width Ratio</span><span id="kwVal" class="angle-val">—</span></div>
+              <div class="angle-bar-track"><div class="angle-bar-fill" id="kwBar"></div></div>
+            </div>
           </div>
         </div>
 
@@ -289,6 +293,7 @@
           <div style="margin-top:12px;font-family:var(--mono);font-size:0.68rem;color:var(--muted);line-height:1.6;">
             <div><span style="color:var(--text)">Knee/Hip</span> — lower = deeper squat. Target ≤ 90° at bottom.</div>
             <div><span style="color:var(--text)">Back Lean</span> — degrees forward from upright. Keep low.</div>
+            <div><span style="color:var(--text)">Knee Width</span> — knee spread ÷ hip width. Target ≥ 1.5.</div>
             <div><span style="color:var(--text)">Bar width</span> — how close to straight (180°) your joint is.</div>
           </div>
         </div>
@@ -297,6 +302,7 @@
           <div class="fault-list">
             <div class="fault-item clear" id="fault-valgus"><div class="fault-dot"></div>Knee Valgus</div>
             <div class="fault-item clear" id="fault-lean"><div class="fault-dot"></div>Forward Lean</div>
+            <div class="fault-item clear" id="fault-narrow"><div class="fault-dot"></div>Narrow Knees</div>
           </div>
         </div>
         <div class="model-status" id="modelStatus">Loading pose model…</div>

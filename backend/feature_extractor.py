@@ -169,6 +169,10 @@ class FrameFeatures:
     left_knee_valgus_ratio:  Optional[float] = None
     right_knee_valgus_ratio: Optional[float] = None
 
+    # Knee width ratio: knee_width / hip_width
+    # ~1.5 = knees tracking wide over toes (ideal), <1.5 = too narrow
+    knee_width_ratio: Optional[float] = None
+
     # Landmarks (for visualization)
     landmarks: Optional[PoseLandmarks] = field(default=None, repr=False)
 
@@ -227,6 +231,13 @@ class FrameFeatures:
             f.left_ankle_y  = float(la[1])
         if ra:
             f.right_ankle_y = float(ra[1])
+
+        # ── Knee width ratio ─────────────────────────────────────────
+        if lh and rh and lk and rk:
+            hip_width  = abs(rh[0] - lh[0])
+            knee_width = abs(rk[0] - lk[0])
+            if hip_width > 1e-4:
+                f.knee_width_ratio = float(knee_width / hip_width)
 
         # ── Lateral knee tracking (valgus detection) ─────────────────
         # Project the knee onto the hip-ankle line and measure deviation.
@@ -295,6 +306,10 @@ class SquatFeatures:
     max_left_valgus:  float = 0.0    # max inward knee deviation
     max_right_valgus: float = 0.0
 
+    # Knee width
+    mean_knee_width_ratio: float = 1.0   # mean knee/hip width ratio across frames
+    min_knee_width_ratio:  float = 1.0   # worst (narrowest) frame
+
     # Heel lift
     left_ankle_y_range:  float = 0.0  # large = heel lifts
     right_ankle_y_range: float = 0.0
@@ -312,6 +327,7 @@ class SquatFeatures:
     fault_heel_lift:    bool = False
     fault_asymmetry:    bool = False
     fault_forward_lean: bool = False
+    fault_narrow_knees: bool = False   # knees significantly inside hip width
 
     def to_ml_vector(self) -> List[float]:
         """
@@ -339,11 +355,14 @@ class SquatFeatures:
             "rep_count":            self.rep_count,
             "descent_frames":       self.descent_frames,
             "ascent_frames":        self.ascent_frames,
+            "mean_knee_width_ratio": round(self.mean_knee_width_ratio, 2),
+            "min_knee_width_ratio":  round(self.min_knee_width_ratio, 2),
             "faults": {
-                "knee_valgus":  self.fault_knee_valgus,
-                "heel_lift":    self.fault_heel_lift,
-                "asymmetry":    self.fault_asymmetry,
-                "forward_lean": self.fault_forward_lean,
+                "knee_valgus":   self.fault_knee_valgus,
+                "heel_lift":     self.fault_heel_lift,
+                "asymmetry":     self.fault_asymmetry,
+                "forward_lean":  self.fault_forward_lean,
+                "narrow_knees":  self.fault_narrow_knees,
             },
         }
 
@@ -387,6 +406,7 @@ class FeatureExtractor:
         right_ankle_ys= [f.right_ankle_y      for f in frames if f.right_ankle_y      is not None]
         l_valgus      = [f.left_knee_valgus_ratio  for f in frames if f.left_knee_valgus_ratio  is not None]
         r_valgus      = [f.right_knee_valgus_ratio for f in frames if f.right_knee_valgus_ratio is not None]
+        knee_widths   = [f.knee_width_ratio for f in frames if f.knee_width_ratio is not None]
 
         # ── Smooth temporal signals ───────────────────────────────────
         if len(knee_angles) >= 7:
@@ -429,6 +449,11 @@ class FeatureExtractor:
         if right_ankle_ys:
             sf.right_ankle_y_range = float(max(right_ankle_ys) - min(right_ankle_ys))
 
+        # ── Knee width ───────────────────────────────────────────────
+        if knee_widths:
+            sf.mean_knee_width_ratio = float(np.mean(knee_widths))
+            sf.min_knee_width_ratio  = float(min(knee_widths))
+
         # ── Lateral valgus ───────────────────────────────────────────
         if l_valgus:
             # Only count positive values (inward deviation = valgus)
@@ -456,6 +481,7 @@ class FeatureExtractor:
         # ── Fault flags ──────────────────────────────────────────────
         sf.fault_knee_valgus  = (sf.max_left_valgus  > self.VALGUS_THRESHOLD or
                                  sf.max_right_valgus > self.VALGUS_THRESHOLD)
+        sf.fault_narrow_knees = sf.min_knee_width_ratio < 1.5
         sf.fault_heel_lift    = (sf.left_ankle_y_range  > self.HEEL_LIFT_THRESHOLD or
                                  sf.right_ankle_y_range > self.HEEL_LIFT_THRESHOLD)
         sf.fault_asymmetry    = sf.max_knee_asymmetry > self.ASYMMETRY_THRESHOLD
